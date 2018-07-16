@@ -18,3 +18,9 @@ removes the file that has become redundant.
  
 The storage handles very big writing transactions (up to terabytes) without much impact
 on the RAM. It works best with shorter keys.
+
+## Build prerequisites
+
+The project depends on another GitHub project `@ornamental/sqlite-statements`. 
+Build and install the corresponding artifact into local Maven repository before building
+this project.
