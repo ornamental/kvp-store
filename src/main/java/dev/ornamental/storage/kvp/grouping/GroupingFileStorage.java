@@ -361,7 +361,7 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 				.collect(Collectors.toMap(Function.identity(), columnFactory));
 
 		public EntryTable() {
-			super(entryTable);
+			super("Entry");
 		}
 
 		public SqlExpression id() {
@@ -406,7 +406,7 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 				.collect(Collectors.toMap(Function.identity(), columnFactory));
 
 		public FileTable() {
-			super(fileTable);
+			super("File");
 		}
 
 		public SqlExpression id() {
@@ -443,7 +443,7 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 				.collect(Collectors.toMap(Function.identity(), columnFactory));
 
 		public MetaTable() {
-			super(metaTable);
+			super("Meta");
 		}
 
 		public SqlExpression internalVersion() {
@@ -472,7 +472,7 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 				.collect(Collectors.toMap(Function.identity(), columnFactory));
 
 		public GcSavepointTable() {
-			super(gcSavepointTable);
+			super("GcSavepoint");
 		}
 
 		public SqlExpression file() {
@@ -497,7 +497,7 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 				.collect(Collectors.toMap(Function.identity(), columnFactory));
 
 		public GcFileQueueTable() {
-			super(gcFileQueueTable);
+			super("GcFileQueue");
 		}
 
 		public SqlExpression file() {
@@ -514,7 +514,7 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 				.collect(Collectors.toMap(Function.identity(), columnFactory));
 
 		public GcUncommittedFilesTable() {
-			super(gcUncommittedFilesTable);
+			super("GcUncommittedFiles");
 		}
 
 		public SqlExpression file() {
@@ -531,7 +531,7 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 				.collect(Collectors.toMap(Function.identity(), columnFactory));
 
 		public FileDeletionQueueTable() {
-			super(fileDeletionQueueTable);
+			super("FileDeletionQueue");
 		}
 
 		public SqlExpression name() {
@@ -573,7 +573,7 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 			DatabaseConnection c, String fileName, long id) throws SQLException {
 
 			String statement =
-				insertInto(fileTable).columns(file.id, file.name, file.fullSize, file.unusedBytes, file.sinceVersion)
+				insertInto(file).columns(file.id, file.name, file.fullSize, file.unusedBytes, file.sinceVersion)
 					.values(rowOf(value(id), value(fileName), NULL, value(0), value(getSinceVersion())))
 					.build();
 			c.insert(statement, EMPTY_ARGS, EMPTY_TYPES, null);
@@ -583,7 +583,7 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 			DatabaseConnection c, String fileName, Object fileTag, int fileSize) throws SQLException {
 
 			String statement =
-				update(fileTable).set(file.fullSize, value(fileSize)).where(file.id().eq(value((long)fileTag)))
+				update(file).set(file.fullSize, value(fileSize)).where(file.id().eq(value((long)fileTag)))
 					.build();
 			c.update(statement, EMPTY_ARGS, EMPTY_TYPES);
 		}
@@ -597,7 +597,7 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 		protected void registerNewFile(DatabaseConnection c, String fileName, long id) throws SQLException {
 			super.registerNewFile(c, fileName, id);
 			String statement =
-				insertInto(gcUncommittedFilesTable).columns(gcUncommittedFiles.file).values(rowOf(id))
+				insertInto(gcUncommittedFiles).columns(gcUncommittedFiles.file).values(rowOf(id))
 					.build();
 			c.insert(statement, EMPTY_ARGS, EMPTY_TYPES, null);
 		}
@@ -625,7 +625,7 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 			super.registerFileClosed(c, fileName, fileTag, fileSize);
 			if (fileSize < config.getLogFileUnderflow()) {
 				String statement =
-					insertOrIgnoreInto(gcFileQueueTable).columns(gcFileQueue.file).values(rowOf((long)fileTag))
+					insertOrIgnoreInto(gcFileQueue).columns(gcFileQueue.file).values(rowOf((long)fileTag))
 						.build();
 				c.insert(statement, EMPTY_ARGS, EMPTY_TYPES, null);
 				underflowRegistered = true;
@@ -656,7 +656,7 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 				return dbOperations.useReadonlyConnection(false, c -> {
 					String statement =
 						select(coalesce(
-							select(entry.deletedRowId().isNull()).from(table(entryTable))
+							select(entry.deletedRowId().isNull()).from(entry)
 								.where(entry.id().eq(value(key.get())).and(entry.version().leq(value(version))))
 								.orderBy(entry.version(), DESC).limit(1),
 							value(0)))
@@ -691,7 +691,7 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 			String statement =
 				with("LastEntry").ofColumns("file", "offset", "size", "deletedRowId")
 				.as(select(entry.file(), entry.offset(), entry.size(), entry.deletedRowId())
-					.from(table(entryTable))
+					.from(entry)
 					.where(entry.id().eq(value(key.get())).and(entry.version().leq(value(version))))
 					.orderBy(entry.version(), DESC).limit(1))
 				.select(file.name(), column("file"), column("offset"), column("size"))
@@ -766,7 +766,7 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 				dbOperations.useConnection(false, c -> {
 					removePreviousVersion(key.get(), c);
 					String statement =
-						insertOrReplaceInto(entryTable)
+						insertOrReplaceInto(entry)
 							.columns(entry.id, entry.version, entry.deletedRowId, entry.file, entry.offset, entry.size)
 						.values(rowOf(
 							value(key.get()), value(getVersion()), NULL, value((long)location.getFileTag()),
@@ -792,7 +792,7 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 				lazyPrepareTransaction();
 
 				existed = dbOperations.useConnection(true, c -> {
-					String statement = deleteFrom(entryTable).where(
+					String statement = deleteFrom(entry).where(
 						entry.id().eq(value(key.get()))
 						.and(entry.version().eq(value(getVersion())))
 						.and(entry.deletedRowId().isNull()))
@@ -928,7 +928,7 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 
 			List<UsedSpace> usage = dbOperations.useReadonlyConnection(false, c ->
 				dbOperations.selectQuery(
-					select(entry.file(), coalesce(sum(entry.size()), value(0))).from(table(entryTable))
+					select(entry.file(), coalesce(sum(entry.size()), value(0))).from(entry)
 						.where(rowId().gt(value(guardRowId)).and(entry.deletedRowId().isNull()))
 						.groupBy(entry.file())
 					.build(),
@@ -940,7 +940,7 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 				dbOperations.useConnection(true, c -> {
 					for (UsedSpace usedSpace : sublist) {
 						c.update(
-							update(fileTable)
+							update(file)
 								.set(file.unusedBytes, file.fullSize().minus(value(usedSpace.getUsedSpace())))
 								.where(file.id().eq(value(usedSpace.getFileId())))
 							.build(), EMPTY_ARGS, EMPTY_TYPES);
@@ -953,10 +953,10 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 		private boolean removePreviousVersion(byte[] key, DatabaseConnection c) throws SQLException {
 			boolean result = 1 == c.insert(
 				with("PreviousVersion").ofColumns("previousVersionRowId", "deletedRowId")
-				.as(select(rowId(), entry.deletedRowId()).from(table(entryTable))
+				.as(select(rowId(), entry.deletedRowId()).from(entry)
 					.where(entry.id().eq(value(key)).and(entry.version().leq(value(getVersion() - 2))))
 					.orderBy(entry.version(), DESC).limit(1))
-				.insertOrIgnoreInto(entryTable)
+				.insertOrIgnoreInto(entry)
 					.columns(entry.id, entry.version, entry.deletedRowId, entry.file, entry.offset, entry.size)
 				.from(
 					select(
@@ -990,7 +990,7 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 			if (!dbFlagSet) { // check the previous transaction was properly ended
 				boolean canProceed = dbOperations.useConnection(true, c -> {
 					boolean wasSet = 0 == c.update(
-						update(metaTable)
+						update(meta)
 							.set(meta.hasUncommittedChanges, value(1))
 							.where(meta.hasUncommittedChanges().eq(value(0)))
 						.build(), EMPTY_ARGS, EMPTY_TYPES);
@@ -1008,7 +1008,7 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 					 * (if it is a deletion entry) thus decreasing MAX(ROWID)
 					 */
 					c.insert(
-						insertInto(entryTable)
+						insertInto(entry)
 							.columns(entry.id, entry.version, entry.deletedRowId, entry.file, entry.offset, entry.size)
 							.values(rowOf(value(new byte[0]), value(Long.MAX_VALUE), NULL, NULL, value(0), value(0)))
 						.build(), EMPTY_ARGS, EMPTY_TYPES, null);
@@ -1034,12 +1034,12 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 			do {
 				deletedRows = dbOperations.useConnection(false,
 					c -> c.delete(
-						deleteFrom(entryTable)
+						deleteFrom(entry)
 							.where(rowId().gt(value(guardRowId))
 								.and(rowId().leq(coalesce(
-									select(min(rowId())).from(table(entryTable)).where(rowId().gt(value(guardRowId)))
+									select(min(rowId())).from(entry).where(rowId().gt(value(guardRowId)))
 										.plus(value(batchSize)),
-									select(max(rowId())).from(table(entryTable))))))
+									select(max(rowId())).from(entry)))))
 						.build(), EMPTY_ARGS, EMPTY_TYPES));
 			} while (deletedRows > 0);
 		}
@@ -1086,11 +1086,11 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 
 					if (!deletable.isEmpty()) {
 						String insertionStatement =
-							insertInto(fileDeletionQueueTable).columns(fileDeletionQueue.name)
+							insertInto(fileDeletionQueue).columns(fileDeletionQueue.name)
 							.from(stringValues(
 								deletable.stream().map(FileVersion::getName).collect(Collectors.toList())))
 							.build();
-						String deletionStatement = deleteFrom(fileTable)
+						String deletionStatement = deleteFrom(file)
 							.where(file.id().in(deletable.stream().mapToLong(FileVersion::getId).toArray()))
 							.build();
 
@@ -1107,13 +1107,13 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 		private void updateDbAfterCommit(long currentWriterVersion, Long guardRowId) throws SQLException {
 			dbOperations.useConnection(true, c -> {
 				c.update(
-					update(metaTable)
+					update(meta)
 						.set(meta.internalVersion, value(currentWriterVersion))
 						.set(meta.committedVersion, value(currentWriterVersion))
 						.set(meta.hasUncommittedChanges, value(0))
 					.build(), EMPTY_ARGS, EMPTY_TYPES);
 				c.delete(
-					deleteFrom(entryTable).where(rowId().eq(value(guardRowId))).build(),
+					deleteFrom(entry).where(rowId().eq(value(guardRowId))).build(),
 					EMPTY_ARGS, EMPTY_TYPES);
 				return null;
 			});
@@ -1124,7 +1124,7 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 			// only switches the internal version, the last committed version stays intact
 			dbOperations.useConnection(true, c -> {
 				c.update(
-					update(metaTable)
+					update(meta)
 						.set(meta.internalVersion, value(getVersion()))
 						.set(meta.hasUncommittedChanges, value(0))
 					.build(), EMPTY_ARGS, EMPTY_TYPES);
@@ -1132,7 +1132,7 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 				if (guardRowId != null) {
 					// remove the transaction ROWID guard
 					c.delete(
-						deleteFrom(entryTable).where(rowId().eq(value(guardRowId))).build(),
+						deleteFrom(entry).where(rowId().eq(value(guardRowId))).build(),
 						EMPTY_ARGS, EMPTY_TYPES);
 				}
 				return null;
@@ -1173,20 +1173,7 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 		}
 	}
 
-	//region Table helper constants
-	private final String entryTable = "Entry";
-
-	private final String fileTable = "File";
-
-	private final String metaTable = "Meta";
-
-	private final String gcSavepointTable = "GcSavepoint";
-
-	private final String gcFileQueueTable = "GcFileQueue";
-
-	private final String gcUncommittedFilesTable = "GcUncommittedFiles";
-
-	private final String fileDeletionQueueTable = "FileDeletionQueue";
+	//region Table helper constant
 
 	private final EntryTable entry = new EntryTable();
 
@@ -1212,7 +1199,7 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 	private final List<String> dbCreationStatements = Collections.unmodifiableList(Arrays.asList(
 		// the default ROWID generation algorithm is used (MAX(ROWID) + 1)
 		// if deletedRowId is not null then file, offset, size must be filled, otherwise this is a deletion record
-		createTable(entryTable)
+		createTable(entry)
 			.addColumn(entry.id).ofType(VARBINARY).withColumnConstraint().notNull()
 			.addColumn(entry.version).ofType(INTEGER).withColumnConstraint().notNull()
 			.addColumn(entry.deletedRowId).ofType(INTEGER)
@@ -1224,14 +1211,14 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 		// fullSize is set when the file is closed
 		// unusedBytes is 0 unless some entry is removed from the file
 		// sinceVersion is NULL for GC files, otherwise reflects the version of the creating writer
-		createTable(fileTable)
+		createTable(file)
 			.addColumn(file.id).ofType(INTEGER).withColumnConstraint().primaryKey()
 			.addColumn(file.name).ofType(VARCHAR).withColumnConstraint().notNull()
 			.addColumn(file.sinceVersion).ofType(INTEGER)
 			.addColumn(file.fullSize).ofType(INTEGER)
 			.addColumn(file.unusedBytes).ofType(INTEGER).withColumnConstraint().notNull()
 		.build(),
-		createTable(metaTable)
+		createTable(meta)
 			.addColumn(meta.internalVersion).ofType(INTEGER).withColumnConstraint().primaryKey()
 			.addColumn(meta.committedVersion).ofType(INTEGER).withColumnConstraint().notNull()
 			.addColumn(meta.hasUncommittedChanges).ofType(BIT).withColumnConstraint().notNull()
@@ -1239,31 +1226,31 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 		// file and offset designate the position from which the GC might proceed with compacting
 		// rowId is the ROWID in the Entry table from which the GC must continue searching for deletion records
 		// (in order to not maintain the index on (deletedRowId IS NULL) flag)
-		createTable(gcSavepointTable)
+		createTable(gcSavepoint)
 			.addColumn(gcSavepoint.file).ofType(INTEGER)
 			.addColumn(gcSavepoint.offset).ofType(INTEGER).withColumnConstraint().notNull()
 			.addColumn(gcSavepoint.lastRowId).ofType(INTEGER)
 		.build(),
 		// file is the file id and not a primary key (the order of ROWID must be the order of insertion)
-		createTable(gcFileQueueTable)
+		createTable(gcFileQueue)
 			.addColumn(gcFileQueue.file).ofType(INTEGER).withColumnConstraint().notNull().build(),
-		createTable(gcUncommittedFilesTable)
+		createTable(gcUncommittedFiles)
 			.addColumn(gcUncommittedFiles.file).ofType(INTEGER).withColumnConstraint().notNull().build(),
-		createTable(fileDeletionQueueTable)
+		createTable(fileDeletionQueue)
 			.addColumn(fileDeletionQueue.name).ofType(VARCHAR).withColumnConstraint().notNull().build(),
 		// the index used by the GC
 		createIndex().named("IDX_Entry_file")
-			.onTable(entryTable).addColumn(entry.file).where(entry.deletedRowId().isNull())
+			.onTable(entry).addColumn(entry.file).where(entry.deletedRowId().isNull())
 		.build(),
 		// the initial version
-		insertInto(metaTable).columns(meta.internalVersion, meta.committedVersion, meta.hasUncommittedChanges)
+		insertInto(meta).columns(meta.internalVersion, meta.committedVersion, meta.hasUncommittedChanges)
 			.values(rowOf(0, 0, 0)).build(),
 		// the initial GC state
-		insertInto(gcSavepointTable).columns(gcSavepoint.file, gcSavepoint.offset, gcSavepoint.lastRowId)
+		insertInto(gcSavepoint).columns(gcSavepoint.file, gcSavepoint.offset, gcSavepoint.lastRowId)
 			.values(rowOf(NULL, value(0), value(0))).build()));
 
 	private final String guardRowIdQuery =
-		select(rowId()).from(table(entryTable))
+		select(rowId()).from(entry)
 			.where(entry.id().eq(value(new byte[0])).and(entry.version().eq(value(Long.MAX_VALUE))))
 		.build();
 
@@ -1431,15 +1418,15 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 		dbOperations.useConnection(true,
 			c -> {
 				c.insert(
-					insertInto(fileDeletionQueueTable).columns(fileDeletionQueue.name)
+					insertInto(fileDeletionQueue).columns(fileDeletionQueue.name)
 					.from(select(file.name())
 						.from(file.innerJoin(gcUncommittedFiles).on(file.id().eq(gcUncommittedFiles.file()))))
 					.build(), EMPTY_ARGS, EMPTY_TYPES, null);
 				c.delete(
-					deleteFrom(fileTable)
+					deleteFrom(file)
 						.where(file.id().in(select(gcUncommittedFiles.file()).from(gcUncommittedFiles)))
 					.build(), EMPTY_ARGS, EMPTY_TYPES);
-				c.delete(deleteFrom(gcUncommittedFilesTable).build(), EMPTY_ARGS, EMPTY_TYPES);
+				c.delete(deleteFrom(gcUncommittedFiles).build(), EMPTY_ARGS, EMPTY_TYPES);
 				return null;
 			});
 	}
@@ -1470,7 +1457,7 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 
 		DeletedEntry lastOne = batch.get(batch.size() - 1);
 		long lastRowId = dbOperations.useReadonlyConnection(false, c -> c.queryForLong(
-			select(rowId()).from(table(entryTable))
+			select(rowId()).from(entry)
 				.where(entry.id().eq(value(lastOne.getId()))
 					.and(entry.version().eq(value(lastOne.getDeletionVersion()))))
 			.build()));
@@ -1524,12 +1511,12 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 				enqueueIds.add(fileState.getId());
 			}
 			updateStatements.add(
-				update(fileTable).set(file.unusedBytes, value(unusedAfter)).where(file.id().eq(value(entry.getKey())))
+				update(file).set(file.unusedBytes, value(unusedAfter)).where(file.id().eq(value(entry.getKey())))
 				.build());
 		}
 		String enqueueStatement = enqueueIds.isEmpty()
 			? null
-			: insertOrIgnoreInto(gcFileQueueTable).columns(gcFileQueue.file).from(numericValues(enqueueIds)).build();
+			: insertOrIgnoreInto(gcFileQueue).columns(gcFileQueue.file).from(numericValues(enqueueIds)).build();
 
 		dbOperations.useConnection(true, c -> { // necessarily in one transaction
 			// delete the entry pairs
@@ -1546,7 +1533,7 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 			// if no deletion entries were skipped in the current GC session,
 			// then advance the GC cursor to the last ROWID
 			if (gcStateBefore.getLastBatchResult() == GcResult.DONE && allCollectable) {
-				c.update(update(gcSavepointTable)
+				c.update(update(gcSavepoint)
 					.set(gcSavepoint.lastRowId, value(lastRowId)).build(), EMPTY_ARGS, EMPTY_TYPES);
 			}
 
@@ -1567,12 +1554,12 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 
 			element = dbOperations.useReadonlyConnection(false, c ->
 				dbOperations.selectQuery(
-					select(rowIdOf(gcFileQueueTable), gcFileQueue.file(), file.name())
+					select(rowIdOf(gcFileQueue), gcFileQueue.file(), file.name())
 					.from(gcFileQueue.innerJoin(file).on(gcFileQueue.file().eq(file.id())))
 					.where(value(1).eq(coalesce(
 						gcFileQueue.file().neq(select(gcSavepoint.file()).from(gcSavepoint)),
 						value(1))))
-					.orderBy(rowIdOf(gcFileQueueTable)).limit(1)
+					.orderBy(rowIdOf(gcFileQueue)).limit(1)
 					.build(),
 					c, r -> new GcFileQueueElement(r.getLong(0), r.getLong(1), r.getString(2))))
 				.stream().findFirst().orElse(null);
@@ -1617,7 +1604,7 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 		if (!deleted.isEmpty()) {
 			dbOperations.useConnection(false, c ->
 				c.delete(
-					deleteFrom(fileDeletionQueueTable)
+					deleteFrom(fileDeletionQueue)
 						.where(rowId().in(deleted.stream().mapToLong(i -> i).toArray()))
 					.build(), EMPTY_ARGS, EMPTY_TYPES));
 		}
@@ -1637,12 +1624,12 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 					column("Ins", "version"), column("Ins", "file"), column("Ins", "size"))
 				.from(
 					select(rowId(), entry.id(), entry.version(), entry.deletedRowId())
-						.from(table(entryTable))
+						.from(entry)
 						.where(rowId().gt(value(gcStateBefore.getLastBatchMaxRowId()))
 							.and(entry.version().leq(value(version)))
 							.and(entry.deletedRowId().isNotNull()))
 						.orderBy(rowId()).limit(batchSize).alias("Del")
-					.innerJoin(table(entryTable).alias("Ins")).on(rowIdOf("Ins").eq(column("Del", "deletedRowId"))))
+					.innerJoin(entry.alias("Ins")).on(rowIdOf("Ins").eq(column("Del", "deletedRowId"))))
 				.orderBy(rowIdOf("Del"))
 				.build(),
 				c, r -> new DeletedEntry(r.getBytes(0), r.getLong(2), r.getLong(1), r.getLong(3), r.getInt(4))));
@@ -1659,13 +1646,13 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 			if (entries.isEmpty()) {
 				dbOperations.useConnection(true, c -> {
 					c.delete(
-						deleteFrom(gcFileQueueTable).where(rowId().eq(value(enqueuedFile.getRowId()))).build(),
+						deleteFrom(gcFileQueue).where(rowId().eq(value(enqueuedFile.getRowId()))).build(),
 						EMPTY_ARGS, EMPTY_TYPES);
 					c.delete(
-						deleteFrom(fileTable).where(file.id().eq(value(enqueuedFile.getFileId()))).build(),
+						deleteFrom(file).where(file.id().eq(value(enqueuedFile.getFileId()))).build(),
 						EMPTY_ARGS, EMPTY_TYPES);
 					c.insert(
-						insertInto(fileDeletionQueueTable).columns(fileDeletionQueue.name)
+						insertInto(fileDeletionQueue).columns(fileDeletionQueue.name)
 							.values().add(value(enqueuedFile.getFileName())).build(),
 						EMPTY_ARGS, EMPTY_TYPES, null);
 
@@ -1702,7 +1689,7 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 				}
 				newLocation = copyData(channel, segment, writer);
 				updateStatements.add(
-					update(entryTable)
+					update(entry)
 						.set(entry.file, value((long)newLocation.getFileTag()))
 						.set(entry.offset, value(newLocation.getOffset()))
 					.where(rowId().eq(value(segment.getRowId())))
@@ -1721,13 +1708,13 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 			// move target file offset; entries being written sequentially, there is a guarantee
 			// that the last entry is in the last new file
 			c.update(
-				update(gcSavepointTable)
+				update(gcSavepoint)
 					.set(gcSavepoint.file, value((long)lastTargetLocation.getFileTag()))
 					.set(gcSavepoint.offset, value(lastTargetLocation.getOffset() + lastTargetLocation.getSize()))
 				.build(), EMPTY_ARGS, EMPTY_TYPES);
 
 			// unmark uncommitted files
-			c.delete(deleteFrom(gcUncommittedFilesTable).build(), EMPTY_ARGS, EMPTY_TYPES);
+			c.delete(deleteFrom(gcUncommittedFiles).build(), EMPTY_ARGS, EMPTY_TYPES);
 
 			return null;
 		});
@@ -1741,7 +1728,7 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 		return dbOperations.useReadonlyConnection(false, c ->
 			dbOperations.selectQuery(
 				select(rowId(), entry.offset(), entry.size())
-					.from(table(entryTable))
+					.from(entry)
 					.where(entry.file().eq(value(enqueuedFile.getFileId())))
 					.limit(batchSize)
 				.build(),
@@ -1787,7 +1774,7 @@ public final class GroupingFileStorage extends AbstractVersionedStorage {
 		}
 		// at this moment only one complex condition is left on the list
 
-		return deleteFrom(entryTable).where(alternatives.getFirst()).build();
+		return deleteFrom(entry).where(alternatives.getFirst()).build();
 	}
 
 	private SplittingWriter getGcWriter(GcSavepoint savepoint) throws IOException {
