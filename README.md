@@ -15,9 +15,30 @@ state, it may be garbage-collected. The garbage collection does not affect
 a file unless the records ready to be collected occupy sufficiently much space in it.
 The garbage collection on a file moves all the remaining records to the end of the 'log' and
 removes the file that has become redundant.
- 
+
 The storage handles very big writing transactions (up to terabytes) without much impact
 on the RAM. It works best with shorter keys.
+
+## Usage
+The principal interface is `VersionedStorage` serving to begin
+reading and modifying transactions on an MVCC storage. Read-only transactions are represented
+by the `Reader` interface, modifying transactions are represented by the `Writer` interface,
+both extending `java.lang.AutoCloseable` (in fact, `Writer` is a `Reader`).
+The supplied concrete implementation of the `VersionedStorage` interface is the class 
+`GroupingFileStorage`.
+
+Keys and values supplied to the storage transaction methods are represented 
+by the `Key` interface, whose implementations must be able to return a byte array 
+representing a key, and the `Value` interface, whose implementations must be aware 
+of the size of data they hold and (in its most general form) be able to return a 
+`ReadableByteChannel` as the data supplier.
+
+Note that the `Key` implementations **must** override `equals(Object)` and `hashCode()` 
+methods so that instances returning equal binary representations are equal. The default
+behaviour is implemented in the `AbstractKey` class.
+
+There exist ready implementations of the `Value` interface wrapping `byte[]` and `InputStream`
+instances (`ByteArrayValue` and `InputStreamValue`, respectively).
 
 ## Build prerequisites
 

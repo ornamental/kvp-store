@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 
 import dev.ornamental.storage.StorageException;
+import dev.ornamental.storage.kvp.AbstractKey;
 import dev.ornamental.storage.kvp.Key;
 import dev.ornamental.storage.kvp.Reader;
 import dev.ornamental.storage.kvp.VersionedStorage;
@@ -26,7 +27,7 @@ import org.junit.rules.TemporaryFolder;
 
 public class VersionedRepositoryTest {
 
-	private final class StringKey implements Key {
+	private final class StringKey extends AbstractKey {
 
 		private final byte[] k;
 
